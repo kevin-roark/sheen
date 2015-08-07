@@ -15,7 +15,7 @@ function makeProject() {
 
     copyFile(__dirname + '/Makefile', './Makefile');
     copyFile(__dirname + '/package.json', './package.json');
-    copyFile(__dirname + '/.gitignore', './gitignore');
+    copyFile(__dirname + '/.gitignore', './.gitignore');
 
     console.log('made yr sheen structure!!');
   });
