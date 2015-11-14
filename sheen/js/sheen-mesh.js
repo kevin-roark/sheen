@@ -1,6 +1,7 @@
 
 let THREE = require('three');
 let kt = require('kutility');
+let Physijs = require('./lib/physi.js');
 
 module.exports = SheenMesh;
 
@@ -18,6 +19,12 @@ function SheenMesh(options) {
   this.modelChoices = [];
 
   this.meshCreator = options.meshCreator;
+
+  this.ignorePhysics = options.ignorePhysics;
+  this.mass = options.mass || 20;
+  this.friction = options.friction || 0.4;
+  this.restitution = options.restitution || 0.6;
+  this.collisionHandler = options.collisionHandler;
 
   this.melting = false;
   this.twitching = false;
@@ -88,10 +95,18 @@ SheenMesh.prototype.createMesh = function(callback) {
 
     loader(self.modelName, function(geometry, materials) {
       self.geometry = geometry;
+      
       self.materials = materials;
+      self.faceMaterial = new THREE.MeshFaceMaterial(materials);
 
-      self.material = new THREE.MeshFaceMaterial(materials);
-      self.mesh = new THREE.Mesh(geometry, self.material);
+      if (self.ignorePhysics) {
+        self.material = self.faceMaterial;
+        self.mesh = new THREE.Mesh(geometry, self.material);
+      }
+      else {
+        self.material = Physijs.createMaterial(self.faceMaterial, self.friction, self.restitution);
+        self.mesh = new Physijs.ConvexMesh(geometry, self.material, self.mass);
+      }
 
       if (callback) {
         callback();
@@ -113,6 +128,12 @@ SheenMesh.prototype.addTo = function(scene, callback) {
 
   if (!self.mesh) {
     self.createMesh(function() {
+      if (!self.ignorePhysics && self.collisionHandler) {
+        self.mesh.addEventListener('collision', function(other_object, relative_velocity, relative_rotation, contact_normal) {
+          self.collisionHandler(other_object, relative_velocity, relative_rotation, contact_normal);
+        });
+      }
+
       self.scaleBody(self.scale);
 
       self.moveTo(self.startX, self.startY, self.startZ);

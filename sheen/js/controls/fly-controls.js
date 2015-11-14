@@ -6,10 +6,16 @@
 var THREE = require('three');
 var Pointerlocker = require('./pointerlocker');
 
+var PI_2 = Math.PI / 2;
+
 module.exports = function (camera, options) {
 	if (!options) options = {};
 
-	this.object = camera;
+	camera.rotation.set(0, 0, 0);
+	var pitchObject = new THREE.Object3D();
+	pitchObject.add(camera);
+	var yawObject = new THREE.Object3D();
+	yawObject.add(pitchObject);
 
 	// API
 
@@ -20,27 +26,55 @@ module.exports = function (camera, options) {
 
 	this.movementSpeed = options.movementSpeed || 9.0;
 	this.rollSpeed = options.rollSpeed || 0.5;
+	this.movementSpeedMultiplier = 1.0;
+
+	this.jumpEnabled = options.jumpEnabled !== undefined ? options.jumpEnabled : true;
+	this.canJump = true;
+	this.jumpVelocityBoost = options.jumpVelocityBoost || 100.0;
+	this.jumpVelocity = 0.0;
+	this.jumpGroundThreshold = options.jumpGroundThreshold || 10.0;
+	this.mass = options.mass || 10.0;
 
 	this.dragToLook = options.dragToLook || false;
 	this.autoForward = options.autoForward || false;
+	this.keysAsRotation = options.keysAsRotation || false;
+
+	this.allowYMovement = options.allowYMovement || false;
+	this.restrictedXRange = options.restrictedXRange || null;
+	this.restrictedZRange = options.restrictedZRange || null;
 
 	this.enabled = false;
 
 	this.locker = new Pointerlocker();
 
 	this.getObject = function() {
-		return this.object;
+		return yawObject;
+	};
+
+	this.pitchObject = function() {
+		return pitchObject;
+	};
+
+	this.setEnabled = function(enabled) {
+		this.enabled = enabled;
 	};
 
 	this.requestPointerlock = function() {
-		if (this.locker.canEverHavePointerLock()) {
-			this.locker.requestPointerlock();
-		}
+		this.locker.requestPointerlock();
+	};
+	this.exitPointerlock = function() {
+		this.locker.exitPointerlock();
+	};
+
+	this.reset = function() {
+		[yawObject, pitchObject, camera].forEach(function(obj) {
+			obj.position.set(0, 0, 0); obj.rotation.set(0, 0, 0);
+		});
 	};
 
 	// internals
 
-	this.prevTime = performance.now();
+	this.prevTime = window.performance ? window.performance.now() : new Date();
 
 	this.mouseStatus = 0;
 
@@ -48,15 +82,7 @@ module.exports = function (camera, options) {
 	this.moveVector = new THREE.Vector3( 0, 0, 0 );
 	this.rotationVector = new THREE.Vector3( 0, 0, 0 );
 
-	this.handleEvent = function ( event ) {
-		if ( typeof this[ event.type ] === 'function' ) {
-			this[ event.type ]( event );
-		}
-	};
-
 	this.keydown = function( event ) {
-		if (!this.enabled) return;
-
 		if ( event.altKey ) {
 			return;
 		}
@@ -73,14 +99,45 @@ module.exports = function (camera, options) {
 			case 82: /*R*/ this.moveState.up = 1; break;
 			case 70: /*F*/ this.moveState.down = 1; break;
 
-			case 38: /*up*/ this.moveState.pitchUp = 1; break;
-			case 40: /*down*/ this.moveState.pitchDown = 1; break;
+			case 38: /*up*/ {
+				if (this.keysAsRotation) {
+					this.moveState.pitchUp = 1;
+				} else {
+					this.moveState.forward = 1;
+				}
+			} break;
+			case 40: /*down*/ {
+				if (this.keysAsRotation) {
+					this.moveState.pitchDown = 1;
+				} else {
+					this.moveState.back = 1;
+				}
+			} break;
 
-			case 37: /*left*/ this.moveState.yawLeft = 1; break;
-			case 39: /*right*/ this.moveState.yawRight = 1; break;
+			case 37: /*left*/ {
+				if (this.keysAsRotation) {
+					this.moveState.yawLeft = 1;
+				} else {
+					this.moveState.left = 1;
+				}
+			} break;
+			case 39: /*right*/ {
+				if (this.keysAsRotation) {
+					this.moveState.yawRight = 1;
+				} else {
+					this.moveState.right = 1;
+				}
+			} break;
 
 			case 81: /*Q*/ this.moveState.rollLeft = 1; break;
 			case 69: /*E*/ this.moveState.rollRight = 1; break;
+
+			case 32: /* space */ {
+				if (this.jumpEnabled && this.canJump) {
+					this.jumpVelocity += this.jumpVelocityBoost;
+					this.canJump = false;
+				}
+			} break;
 		}
 
 		this.updateMovementVector();
@@ -88,8 +145,6 @@ module.exports = function (camera, options) {
 	};
 
 	this.keyup = function( event ) {
-		if (!this.enabled) return;
-
 		switch( event.keyCode ) {
 			case 16: /* shift */ this.movementSpeedMultiplier = 1; break;
 
@@ -102,16 +157,30 @@ module.exports = function (camera, options) {
 			case 82: /*R*/ this.moveState.up = 0; break;
 			case 70: /*F*/ this.moveState.down = 0; break;
 
-			case 38: /*up*/ this.moveState.pitchUp = 0; break;
-			case 40: /*down*/ this.moveState.pitchDown = 0; break;
+			case 38: /*up*/ {
+				this.moveState.forward = 0;
+				this.moveState.pitchUp = 0;
+			} break;
+			case 40: /*down*/ {
+				this.moveState.back = 0;
+				this.moveState.pitchDown = 0;
+			} break;
 
-			case 37: /*left*/ this.moveState.yawLeft = 0; break;
-			case 39: /*right*/ this.moveState.yawRight = 0; break;
+			case 37: /*left*/ {
+				this.moveState.left = 0;
+				this.moveState.yawLeft = 0;
+			} break;
+			case 39: /*right*/ {
+				this.moveState.right = 0;
+				this.moveState.yawRight = 0;
+			} break;
 
 			case 81: /*Q*/ this.moveState.rollLeft = 0; break;
 			case 69: /*E*/ this.moveState.rollRight = 0; break;
 
-			case 90: /*Z - reset*/ this.object.position.set(0, 0, 0); this.object.rotation.set(0, 0, 0);
+			case 90: /*Z - reset*/ {
+				this.reset();
+			} break;
 		}
 
 		this.updateMovementVector();
@@ -119,7 +188,8 @@ module.exports = function (camera, options) {
 	};
 
 	this.mousedown = function( event ) {
-		if (!this.enabled || !this.locker.currentlyHasPointerlock) return;
+		if (!this.enabled) return;
+		if (this.locker.canEverHavePointerLock() && !this.locker.currentlyHasPointerlock) return;
 
 		if ( this.domElement !== document ) {
 			this.domElement.focus();
@@ -141,19 +211,37 @@ module.exports = function (camera, options) {
 	};
 
 	this.mousemove = function( event ) {
-		if (!this.enabled || !this.locker.currentlyHasPointerlock) return;
+		if (!this.enabled) return;
+		if (this.locker.canEverHavePointerLock() && !this.locker.currentlyHasPointerlock) return;
 
 		if ( !this.dragToLook || this.mouseStatus > 0 ) {
-			var movementX = event.movementX || event.mozMovementX || event.webkitMovementX || 0;
-			var movementY = event.movementY || event.mozMovementY || event.webkitMovementY || 0;
+			var movementX = event.movementX || event.mozMovementX || event.webkitMovementX;
+			var movementY = event.movementY || event.mozMovementY || event.webkitMovementY;
 
-			this.object.rotation.y -= movementX * 0.002;
-			this.object.rotation.x -= movementY * 0.002;
+			// fallback for browsers with no movement
+		  if (movementX === undefined || movementY === undefined) {
+		    if (this.lastClientX !== undefined) {
+		      movementX = event.clientX - this.lastClientX;
+		      movementY = event.clientY - this.lastClientY;
+		    }
+		    else {
+		      movementX = 0;
+		      movementY = 0;
+		    }
+
+				this.lastClientX = event.clientX; this.lastClientY = event.clientY;
+			}
+
+			yawObject.rotation.y -= movementX * 0.002;
+
+			pitchObject.rotation.x -= movementY * 0.002;
+			pitchObject.rotation.x = Math.max(-PI_2, Math.min(PI_2,pitchObject.rotation.x));
 		}
 	};
 
 	this.mouseup = function( event ) {
-		if (!this.enabled || !this.locker.currentlyHasPointerlock) return;
+		if (!this.enabled) return;
+		if (this.locker.canEverHavePointerLock() && !this.locker.currentlyHasPointerlock) return;
 
 		event.preventDefault();
 		event.stopPropagation();
@@ -174,16 +262,46 @@ module.exports = function (camera, options) {
 	};
 
 	this.update = function() {
-		var time = performance.now();
+		var time = window.performance ? window.performance.now() : new Date();
 		var delta = ( time - this.prevTime ) / 1000;
 
-		var moveMult = delta * this.movementSpeed;
-		var rotMult = delta * this.rollSpeed;
+		if (this.enabled) {
+			var moveMult = delta * this.movementSpeed * this.movementSpeedMultiplier;
+			var rotMult = delta * this.rollSpeed;
 
-		this.object.translateX( this.moveVector.x * moveMult );
-		this.object.translateY( this.moveVector.y * moveMult );
-		this.object.translateZ( this.moveVector.z * moveMult );
+			yawObject.translateX(this.moveVector.x * moveMult);
+			if (this.restrictedXRange) {
+				yawObject.position.x = clamp(yawObject.position.x, this.restrictedXRange.min, this.restrictedXRange.max);
+			}
 
+			yawObject.translateZ(this.moveVector.z * moveMult);
+			if (this.restrictedZRange) {
+				yawObject.position.z = clamp(yawObject.position.z, this.restrictedZRange.min, this.restrictedZRange.max);
+			}
+
+			if (this.allowYMovement) {
+				yawObject.translateY(this.moveVector.y * moveMult);
+			}
+			else if (this.jumpEnabled) {
+				this.jumpVelocity -= (9.8 * this.mass * delta);
+				var jdy = this.jumpVelocity * delta;
+				yawObject.translateY(jdy);
+
+				if (yawObject.position.y < this.jumpGroundThreshold) {
+					this.jumpVelocity = 0;
+					yawObject.position.y = this.jumpGroundThreshold;
+					this.canJump = true;
+				}
+			}
+
+			if (this.keysAsRotation) {
+				yawObject.rotateX(this.rotationVector.x * rotMult);
+				yawObject.rotateY(this.rotationVector.y * rotMult);
+				yawObject.rotateZ(this.rotationVector.z * rotMult);
+			}
+		}
+
+		this.mostRecentDelta = delta;
 		this.prevTime = time;
 	};
 
@@ -219,6 +337,10 @@ module.exports = function (camera, options) {
 		return function () {
 			fn.apply( scope, arguments );
 		};
+	}
+
+	function clamp(num, min, max) {
+		return Math.min(Math.max(num, min), max);
 	}
 
 	this.domElement.addEventListener( 'contextmenu', function ( event ) { event.preventDefault(); }, false );

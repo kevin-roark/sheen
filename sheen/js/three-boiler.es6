@@ -4,22 +4,25 @@ let THREE = require('three');
 
 export class ThreeBoiler {
   constructor(rendererOptions) {
-    try {
-      this.renderer = new THREE.WebGLRenderer(rendererOptions);
-      this.renderMode = 'webgl';
-    } catch(e) {
-      $('.webgl-error').show();
-      setTimeout(function() {
-        $('.webgl-error').fadeOut();
-      }, 6666);
-      this.renderer = new THREE.CanvasRenderer();
-      this.renderMode = 'canvas';
+    this.onPhone = rendererOptions.onPhone || false;
+    if (!this.onPhone) {
+      try {
+        this.renderer = new THREE.WebGLRenderer(rendererOptions);
+        this.renderMode = 'webgl';
+      } catch(e) {
+        $('.webgl-error').show();
+        setTimeout(function() {
+          $('.webgl-error').fadeOut();
+        }, 6666);
+        this.renderer = new THREE.CanvasRenderer();
+        this.renderMode = 'canvas';
+      }
+
+      this.renderer.setClearColor(0xffffff, 1);
+      document.body.appendChild(this.renderer.domElement);
     }
 
-    this.renderer.setClearColor(0xffffff, 1);
-    document.body.appendChild(this.renderer.domElement);
-
-    this.scene = new THREE.Scene();
+    this.scene = this.createScene();
 
     this.camera = this.createCamera();
     this.scene.add(this.camera);
@@ -31,6 +34,10 @@ export class ThreeBoiler {
     this.resize();
 
     $('body').keypress((ev) => {this.keypress(ev.which);});
+  }
+
+  createScene() {
+    return new THREE.Scene();
   }
 
   createCamera() {
@@ -51,11 +58,15 @@ export class ThreeBoiler {
 
     this.frame += 1;
 
-    this.renderer.render(this.scene, this.camera);
+    if (this.renderer) {
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 
   resize() {
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    if (this.renderer) {
+      this.renderer.setSize(window.innerWidth, window.innerHeight);
+    }
 
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
@@ -85,6 +96,10 @@ export class ThreeBoiler {
     // lol
   }
 }
+
+// setup typeface
+window._typeface_js = {faces: THREE.FontUtils.faces, loadFace: THREE.FontUtils.loadFace};
+THREE.typeface_js = window._typeface_js;
 
 // request animation frame shim
 (function() {
